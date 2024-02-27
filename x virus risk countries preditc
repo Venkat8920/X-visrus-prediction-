@@ -1,0 +1,116 @@
+import streamlit as st
+import pandas as pd
+import folium
+from streamlit_folium import folium_static
+import geopandas as gpd
+import googlemaps
+import time
+import random
+
+# Initialize Google Maps client
+gmaps = googlemaps.Client(key='AIzaSyBhO_ekRQCqEHUJ5QCx9RPBXCrdb0Ff2bM')
+
+
+@st.cache_data
+def load_data(filepath):
+    data = pd.read_csv(filepath)
+    if 'Latitude' not in data.columns or 'Longitude' not in data.columns:
+        data['Latitude'] = None
+        data['Longitude'] = None
+    return data
+
+def get_lat_lon(country, gmaps, retry_count=3, delay=1):
+    for i in range(retry_count):
+        try:
+            geocode_result = gmaps.geocode(country)
+            if geocode_result:
+                location = geocode_result[0]['geometry']['location']
+                return location['lat'], location['lng']
+        except Exception as e:
+            st.error(f"Error during geocoding: {e}. Retrying ({i+1}/{retry_count})...")
+            time.sleep(delay * (2 ** i))
+    return None, None
+
+@st.cache_data
+def load_world_geometry():
+    world = gpd.read_file(gpd.datasets.get_path('naturalearth_lowres'))
+    return world
+
+def create_highlighted_map(world, country_name, predictions):
+    m = folium.Map()
+    for _, row in world.iterrows():
+        color = 'blue' if row['name'] == country_name else 'white'
+        if row['name'] in predictions:
+            color = 'red' if predictions[row['name']] == 'High' else 'green'
+        folium.GeoJson(row['geometry'], style_function=lambda feature, clr=color: {
+            'fillColor': clr,
+            'color': 'black',
+            'weight': 0.5,
+            'fillOpacity': 0.5
+        }).add_to(m)
+    return m
+
+def get_predictions(data):
+    # Placeholder for actual prediction logic
+    # This example assigns random risk levels for demonstration purposes
+    countries = data['Country'].unique()
+    return {country: random.choice(['High', 'Medium', 'Low']) for country in countries}
+
+def create_predictions_table(predictions):
+    # Creating a DataFrame to hold predictions
+    pred_df = pd.DataFrame(list(predictions.items()), columns=['Country', 'Risk Level'])
+    # Creating separate columns for each risk category
+    pred_df['High'] = pred_df['Risk Level'].apply(lambda x: '✓' if x == 'High' else '')
+    pred_df['Medium'] = pred_df['Risk Level'].apply(lambda x: '✓' if x == 'Medium' else '')
+    pred_df['Low'] = pred_df['Risk Level'].apply(lambda x: '✓' if x == 'Low' else '')
+    return pred_df[['Country', 'High', 'Medium', 'Low']]
+
+def main():
+    st.title("COVID-19 Global Statistics Visualization")
+
+    # Load the dataset
+    data = load_data("/Users/venkat/Documents/Covid /COVID-19 Global Statistics Dataset.csv")
+
+    # Sidebar for country selection and model options
+    st.sidebar.title("Options")
+    country = st.sidebar.selectbox('Select a Country', data['Country'].unique())
+    selected_model = st.sidebar.selectbox('Select a Model', ['Model 1', 'Model 2', 'Model 3'])
+
+    # Load the world geometry data
+    world = load_world_geometry()
+
+    # Geocode the selected country if necessary
+    country_data = data[data['Country'] == country]
+    if pd.isna(country_data['Latitude']).all() and pd.isna(country_data['Longitude']).all():
+        lat, lon = get_lat_lon(country, gmaps)
+        if lat and lon:
+            data.loc[data['Country'] == country, ['Latitude', 'Longitude']] = lat, lon
+            country_data = data[data['Country'] == country].copy()
+
+    # Show country-wise data
+    st.write(f"Data for {country}:")
+    st.write(country_data)
+
+    # Display the map with the selected country highlighted
+    st.subheader(f"Map View for {country}")
+    highlighted_map = create_highlighted_map(world, country, {})
+    folium_static(highlighted_map)
+
+    # Model prediction and visualization
+    if st.sidebar.button('Predict High Risk Countries'):
+        predictions = get_predictions(data)
+        prediction_table = create_predictions_table(predictions)
+
+        st.write("Predictions for high-risk countries:")
+        st.table(prediction_table)
+
+
+        # Update the map with predictions
+        st.subheader("Map View with Predictions")
+        prediction_map = create_highlighted_map(world, country, predictions)
+        folium_static(prediction_map)
+
+if __name__ == "__main__":
+    main()
+
+
