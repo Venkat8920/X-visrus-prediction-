@@ -8,7 +8,7 @@ import time
 import random
 
 # Initialize Google Maps client
-gmaps = googlemaps.Client(key='AIzaSyBhO_ekRQCqEHUJ5QCx9RPBXCrdb0Ff2bM')
+gmaps = googlemaps.Client(key='Your API Key')
 
 
 @st.cache_data
